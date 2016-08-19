@@ -3,9 +3,12 @@
 #Documentation isn't that good at this point, see code if necessary :)
 
 1. You can create an object which is used to delegate method calls to numerous other objects as:
-    MultiFactory.constructInheritance(fathersArray,allowDuplicate,errorIfMissing,allowOverride,allowDeletion)
+```javascript
+MultiFactory.constructInheritance(fathersArray,allowDuplicate,errorIfMissing,allowOverride,allowDeletion)
+```
 
 All of the parameters are optional. The fathersArray is an array containing the objects whose methods should be used. For example:
+```javascript
     var obj1 = {};
     obj1.foo = () => console.log("In obj1 foo");
 
@@ -18,20 +21,24 @@ All of the parameters are optional. The fathersArray is an array containing the 
 
     mfo2.foo(); // calls obj2.foo
     mfo2.bar(); // calls obj2.bar
+```
 
 The reason obj2.foo is called instead of obj1.foo is that the insertion order of the fathers matters. If we had first inserted obj2 and after that obj1 we would have called obj1.foo .
 When allowDuplicate is set to false if we tried to call mfo2.foo() an error would be thrown because we have a method/property that is present in at least two places in the hierarchy. If allowDuplicate is set to true then the last added object method/property with that name would be used.
 If errorIfMissing is set to true, if we try to access a method/property that is not in the hierarchy an error would be thrown.
-    var mfo = MultiFactory.constructInheritance([obj1], true, true);
-    mfo.baz; // throw error
-    mfo.baz = 5; // throw error
-
+```javascript
+var mfo = MultiFactory.constructInheritance([obj1], true, true);
+mfo.baz; // throw error
+mfo.baz = 5; // throw error
+```
 If allowOverride is false then this will throw an error:
-    MultiFactory.addPropertyToProxy(mfo, "foo", () => {}); // throw error
-
+```javascript
+MultiFactory.addPropertyToProxy(mfo, "foo", () => {}); // throw error
+```
 If allowDeletion is set to true, then:
-    delete mfo.foo; // this deletes the property from obj1 as well
-
+```javascript
+delete mfo.foo; // this deletes the property from obj1 as well
+```
 There are getters and setters for all of the booleans that can be passed to the method.
 
 ####Important: The implemented proxy handlers are : ["get", "set", "has", "ownKeys", "deleteProperty"]
