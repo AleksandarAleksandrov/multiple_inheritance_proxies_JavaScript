@@ -4,7 +4,7 @@
 
 1. You can create an object which is used to delegate method calls to numerous other objects as:
 ```javascript
-MultiFactory.constructInheritance(fathersArray,allowDuplicate,errorIfMissing,allowOverride,allowDeletion)
+MultiFactory.constructInheritance(fathersArray,{}); // the {} object must can contain specific options
 ```
 
 All of the parameters are optional. The fathersArray is an array containing the objects whose methods should be used. For example:
@@ -38,6 +38,11 @@ MultiFactory.addPropertyToProxy(mfo, "foo", () => {}); // throw error
 If allowDeletion is set to true, then:
 ```javascript
 delete mfo.foo; // this deletes the property from obj1 as well
+```
+If overrideAll is set to true, then:
+```javascript
+mfo.foo = () => console.log("In mfo foo");
+obj1.foo(); // prints: "In mfo foo"
 ```
 There are getters and setters for all of the booleans that can be passed to the method.
 
@@ -210,3 +215,18 @@ MultiFactory.getAllowedHandlersList()
 */
 
 MultiFactory.getDisallowedHandlersList()
+
+/**
+ * Creates/overrides a property on the inner target object and all it's fathers in the
+ * hierarchy. This is used as a different set logic that using = (see set handler)
+ */
+
+MultiFactory.createPropertyOnProxyAndFathers(proxyObj, propertyName, property)
+
+/**
+ * Deletes the property with the passed name from all the fathers in
+ * the hierarchy and the inner object. This is used for logic different
+ * then the delete operator. See the deletePropety handler.
+ */
+
+MultiFactory.deletePropertyOnProxyAndFathers(proxyObj, propertyName)

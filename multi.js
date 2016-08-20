@@ -6,6 +6,7 @@ const ALLOW_PROPERTY_OVERRIDE_SYMBOL = Symbol("Should override property if true"
 const PROTOTYPE_SYMBOL = Symbol.for("[[Prototype]]");
 const INNER_OBJECT_SYMBOL = Symbol("The inner object used by the proxy for various actions");
 const ALLOW_PROPERTY_DELETION_SYMBOL = Symbol("Is property deletion from proxy allowed");
+const OVERRIDE_ALL_SYMBOL = Symbol("Override the property in all fathers");
 const HANDLERS_SYMBOL = Symbol("The proxy objects handlers");
 const ALLOWED_HANDLERS_LIST = [ "apply",
                                 "construct",
@@ -34,18 +35,22 @@ var MultiFactory = {};
 MultiFactory.constructInheritance =
             function constructInheritance(
                             fathersArray = [],
-                            allowDuplicate = true,
-                            errorIfMissing = false,
-                            allowOverride = true,
-                            allowDeletion = false
+                            {
+                              allowDuplicate: ad = true,
+                              errorIfMissing: eim = false,
+                              allowOverride: ao = true,
+                              allowDeletion: aDel = false,
+                              overrideAll: oa = false
+                            }
                            ) {
             // create the inner object
             let targetObj = {};
             // initialize symbol properties
-            targetObj[DUPLICATION_ALLOWED_SYMBOL] = allowDuplicate;
-            targetObj[ERROR_IF_MISSING_SYMBOL] = errorIfMissing;
-            targetObj[ALLOW_PROPERTY_OVERRIDE_SYMBOL] = allowOverride;
-            targetObj[ALLOW_PROPERTY_DELETION_SYMBOL] = allowDeletion;
+            targetObj[DUPLICATION_ALLOWED_SYMBOL] = ad;
+            targetObj[ERROR_IF_MISSING_SYMBOL] = eim;
+            targetObj[ALLOW_PROPERTY_OVERRIDE_SYMBOL] = ao;
+            targetObj[ALLOW_PROPERTY_DELETION_SYMBOL] = aDel;
+            targetObj[OVERRIDE_ALL_SYMBOL] = oa;
             targetObj[PROTOTYPE_SYMBOL] = fathersArray;
             // create an inner dependency to be used for property addition
             // of elements that do not belong in the hierarchy
@@ -334,6 +339,43 @@ MultiFactory.getDisallowedHandlersList = function getDisallowedHandlersList() {
 }
 
 /**
+ * Creates/overrides a property on the inner target object and all it's fathers in the
+ * hierarchy. This is used as a different set logic that using = (see set handler)
+ */
+MultiFactory.createPropertyOnProxyAndFathers = function createPropertyOnProxyAndFathers(proxyObj, propertyName, property) {
+  let setCounter = 0;
+  if(Reflect.set(proxyObj[INNER_OBJECT_SYMBOL], propertyName, property)) setCounter++;
+
+  for (let proto of target[PROTOTYPE_SYMBOL] ) {
+    Reflect.set(proxyObj, propertyName, property);
+    setCounter++;
+  }
+  return setCounter;
+}
+
+/**
+ * Deletes the property with the passed name from all the fathers in
+ * the hierarchy and the inner object. This is used for logic different
+ * then the delete operator. See the deletePropety handler.
+ */
+MultiFactory.deletePropertyOnProxyAndFathers = function deletePropertyOnProxyAndFathers(proxyObj, propertyName) {
+  let deletedCounter = 0;
+  if(Reflect.has(proxyObj[INNER_OBJECT_SYMBOL], propertyName)){
+    delete proxyObj[INNER_OBJECT_SYMBOL][propertyName];
+    deletedCounter++;
+  }
+
+  for (let proto of target[PROTOTYPE_SYMBOL] ) {
+    if(Reflect.has(proto,propertyName)){
+      delete proto[propertyName];
+      deletedCounter++;
+    }
+  }
+
+  return deletedCounter;
+}
+
+/**
  * Construct the handlers to be used for the multiple prototype delegation simulation.
  * These handlers can't and should not be directly modified.
  * @return {Object}  An object containg the proxy handlers.
@@ -348,6 +390,7 @@ function constructHandlers() {
      */
     handlers.get = function get(target,key,receiver) {
             // first check the inner object
+            // if it is there get it
             if (Reflect.has( target, key )) {
                 return Reflect.get(target, key, receiver);
             } else {
@@ -384,37 +427,59 @@ function constructHandlers() {
           };
 
     /**
-     * The set handler for the proxy object.
+     * The set handler for the proxy object. If the inner object has
+     * the property then it's property is set. If it doesn't have and
+     * OVERRIDE_ALL_SYMBOL is true, then that property is overriden in all
+     * fathers in the hierarchy, else the property in the last father is
+     * overriden. If the property is not found anywhere it is created on the
+     * inner object.
      */
     handlers.set = function set(target,key,val,receiver) {
                 // first search the inner object of the proxy
+                // if it has that property override only it.
+                // To override the same property in the inner object
+                // and in all the fathers use the corresponding method
                 if(Reflect.has(target, key)) {
-                  return Reflect.set(target, key, val, receiver);
+                  Reflect.set(target, key, val);
+                  return true;
                 } else {
                   let isPresent = false;
                   let foundProp = undefined;
                   // search in the hierarchy
                   for (let proto of target[PROTOTYPE_SYMBOL] ) {
                       if (Reflect.has( proto, key )) {
-                          // use the last found property
-                          isPresent = true;
-                          foundProp =  Reflect.set(target, key, val, receiver);
+                          if(!target[ALLOW_PROPERTY_OVERRIDE_SYMBOL]){
+                              throw "Overriding of properties/methods of hierarchy fathers is currently disallowed."
+                          }
+                          if(target[OVERRIDE_ALL_SYMBOL]){
+                            Reflect.set(proto, key, val);
+                            isPresent = true;
+                          } else {
+                            foundProp = proto;
+                            isPresent = true;
+                          }
                       }
                   }
+                  // if OVERRIDE_ALL_SYMBOL is false
+                  // override the property of the last object added
+                  // to the heirarchy
+                  if(!target[OVERRIDE_ALL_SYMBOL] && isPresent) {
+                    Reflect.set(foundProp,key,val);
+                    return true;
+                  }
 
+                  // the property was set
+                  if(isPresent) return true;
+
+                  // if the flag is set
                   if(target[ERROR_IF_MISSING_SYMBOL]) {
-                    if(isPresent) {
-                      return foundProp;
-                    } else {
-                      throw "Method/property not found in prototype chain. Creating a new one was disallowed";
-                    }
-                  } else {
-                    // check to see if it is ok to override/hide
-                    // the properties of the fathers in the hierarchy
-                    if(!target[ALLOW_PROPERTY_OVERRIDE_SYMBOL]){
-                        throw "Overriding of properties/methods of hierarchy fathers is currently disallowed."
-                    }
-                    return foundProp;
+                      throw "Method/property not found in prototype chain.";
+                  }
+                  // if the flag is not set and the property is not found
+                  // create it on the inner object
+                  if(!target[ERROR_IF_MISSING_SYMBOL] && !isPresent) {
+                    Reflect.set(target, key, val);
+                    return true;
                   }
                 }
           };
@@ -486,20 +551,24 @@ function constructHandlers() {
 }
 
 //getters
-MultiFactory.getAllowDuplicateOnProxy = function getAllowDuplicateOnProxy(proxyObj, allowDuplicate) {
+MultiFactory.getAllowDuplicateOnProxy = function getAllowDuplicateOnProxy(proxyObj) {
     return proxyObj[DUPLICATION_ALLOWED_SYMBOL];
 };
 
-MultiFactory.getErrorIfMissingOnProxy = function getErrorIfMissingOnProxy(proxyObj, errorIfMissing) {
+MultiFactory.getErrorIfMissingOnProxy = function getErrorIfMissingOnProxy(proxyObj) {
     return proxyObj[ERROR_IF_MISSING_SYMBOL];
 };
 
-MultiFactory.getAllowOverrideOnProxy = function getAllowOverrideOnProxy(proxyObj, allowOverride) {
+MultiFactory.getAllowOverrideOnProxy = function getAllowOverrideOnProxy(proxyObj) {
     return proxyObj[ALLOW_PROPERTY_OVERRIDE_SYMBOL];
 };
 
-MultiFactory.getAllowDeletionOnProxy = function getAllowDeletionOnProxy(proxyObj, allowOverride) {
+MultiFactory.getAllowDeletionOnProxy = function getAllowDeletionOnProxy(proxyObj) {
     return proxyObj[ALLOW_PROPERTY_DELETION_SYMBOL];
+};
+
+MultiFactory.getOverrideAllOnProxy = function getOverrideAllOnProxy(proxyObj) {
+    return proxyObj[OVERRIDE_ALL_SYMBOL];
 };
 
 //setters
@@ -519,4 +588,7 @@ MultiFactory.setAllowDeletionOnProxy = function setAllowDeletionOnProxy(proxyObj
     proxyObj[ALLOW_PROPERTY_DELETION_SYMBOL] = allowDeletion;
 };
 
+MultiFactory.setOverrideAllOnProxy = function setOverrideAllOnProxy(proxyObj, overrideAll) {
+    return proxyObj[OVERRIDE_ALL_SYMBOL] = overrideAll;
+};
 //export {MultiFactory as default};
