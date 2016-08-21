@@ -340,14 +340,14 @@ MultiFactory.getDisallowedHandlersList = function getDisallowedHandlersList() {
 
 /**
  * Creates/overrides a property on the inner target object and all it's fathers in the
- * hierarchy. This is used as a different set logic that using = (see set handler)
+ * hierarchy. This is used as a different set logic that using the set handler.
  */
 MultiFactory.createPropertyOnProxyAndFathers = function createPropertyOnProxyAndFathers(proxyObj, propertyName, property) {
   let setCounter = 0;
   if(Reflect.set(proxyObj[INNER_OBJECT_SYMBOL], propertyName, property)) setCounter++;
 
-  for (let proto of target[PROTOTYPE_SYMBOL] ) {
-    Reflect.set(proxyObj, propertyName, property);
+  for (let proto of proxyObj[PROTOTYPE_SYMBOL] ) {
+    Reflect.set(proto, propertyName, property);
     setCounter++;
   }
   return setCounter;
