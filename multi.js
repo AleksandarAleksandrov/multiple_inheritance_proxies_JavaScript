@@ -591,4 +591,4 @@ MultiFactory.setAllowDeletionOnProxy = function setAllowDeletionOnProxy(proxyObj
 MultiFactory.setOverrideAllOnProxy = function setOverrideAllOnProxy(proxyObj, overrideAll) {
     return proxyObj[OVERRIDE_ALL_SYMBOL] = overrideAll;
 };
-//export {MultiFactory as default};
+//export default MultiFactory;
